@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nobitex Arbitrage Report</title>
+<style>
+  :root {
+    --bg: #0f172a; --bg2: #1e293b; --bg3: #334155;
+    --text: #e2e8f0; --text2: #94a3b8; --text3: #64748b;
+    --green: #22c55e; --red: #ef4444; --blue: #3b82f6;
+    --amber: #f59e0b; --purple: #a855f7;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; background: var(--bg); color: var(--text); padding: 1rem; font-size: 13px; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--text2); font-size: 0.85rem; margin-bottom: 1.5rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .card { background: var(--bg2); border-radius: 12px; padding: 1rem 1.25rem; border: 1px solid var(--bg3); }
+  .card h2 { font-size: 0.8rem; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
+  .stat { font-size: 1.8rem; font-weight: 700; }
+  .stat.green { color: var(--green); }
+  .stat.red { color: var(--red); }
+  .stat.blue { color: var(--blue); }
+  .stat-label { color: var(--text3); font-size: 0.75rem; margin-top: 0.25rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  th { text-align: left; color: var(--text2); font-weight: 600; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--bg3); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { padding: 0.4rem 0.75rem; border-bottom: 1px solid rgba(51,65,85,0.5); }
+  tr:hover td { background: rgba(51,65,85,0.3); }
+  .bar-container { display: flex; align-items: center; gap: 0.5rem; }
+  .bar { height: 16px; border-radius: 3px; min-width: 2px; transition: width 0.3s; }
+  .bar.pos { background: var(--green); }
+  .bar.neg { background: var(--red); }
+  .bar.neutral { background: var(--bg3); }
+  .sleep-badge { display: inline-block; background: rgba(139,92,246,0.2); color: var(--purple); font-size: 0.65rem; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: 600; }
+  .tag-tri { background: rgba(59,130,246,0.2); color: var(--blue); }
+  .tag-cross { background: rgba(245,158,11,0.2); color: var(--amber); }
+  .pct { font-variant-numeric: tabular-nums; }
+  .pos-text { color: var(--green); }
+  .neg-text { color: var(--red); }
+  #loading { text-align: center; padding: 4rem; color: var(--text2); }
+  #error { text-align: center; padding: 2rem; color: var(--red); display: none; }
+  .section { margin-bottom: 2rem; }
+  .section-title { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--bg3); }
+  .updated { color: var(--text3); font-size: 0.7rem; text-align: right; margin-bottom: 1rem; }
+  @media (max-width: 600px) { body { padding: 0.5rem; } .grid { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<h1>Nobitex Arbitrage Report</h1>
+<p class="subtitle">Triangular & cross-pair arbitrage opportunities over time</p>
+<div id="updated" class="updated"></div>
+<div id="loading">Loading timeline data...</div>
+<div id="error"></div>
+<div id="content" style="display:none">
+
+  <div class="grid" id="summary-cards"></div>
+
+  <div class="section">
+    <div class="section-title">By Hour (Tehran Time)</div>
+    <table id="hour-table"><thead><tr>
+      <th>Hour</th><th>Scans</th><th>Avg Best Net%</th><th>Avg Profitable</th><th></th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Sleep (00-06) vs Awake (06-24)</div>
+    <table id="sleep-table"><thead><tr>
+      <th>Period</th><th>Scans</th><th>Avg Best Net%</th><th>Total Profitable</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Top Opportunities Ever Seen</div>
+    <table id="top-table"><thead><tr>
+      <th>#</th><th>Time</th><th>Type</th><th>Assets</th><th>Net%</th><th>Est Profit</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Top Recurring Assets</div>
+    <table id="asset-table"><thead><tr>
+      <th>Asset</th><th>Appearances</th><th></th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+
+</div>
+
+<script>
+const DATA_URL = 'data/timeline.jsonl';
+
+function fmtIRT(n) {
+  const abs = Math.abs(n), sign = n < 0 ? '−' : '';
+  if (abs >= 1e12) return sign + (abs/1e12).toFixed(1) + 'T';
+  if (abs >= 1e9)  return sign + (abs/1e9).toFixed(1)  + 'B';
+  if (abs >= 1e6)  return sign + (abs/1e6).toFixed(1)  + 'M';
+  if (abs >= 1e3)  return sign + (abs/1e3).toFixed(1)  + 'K';
+  return sign + abs.toFixed(0);
+}
+
+function fmtPct(n) {
+  const cls = n > 0 ? 'pos-text' : n < 0 ? 'neg-text' : '';
+  return `<span class="pct ${cls}">${n >= 0 ? '+' : ''}${n.toFixed(3)}%</span>`;
+}
+
+function tehranHour(e) { return Number(e.tehranTime.split(' ')[1].split(':')[0]); }
+
+async function load() {
+  try {
+    const resp = await fetch(DATA_URL);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const text = await resp.text();
+    const lines = text.trim().split('\n').filter(l => l.trim());
+    if (!lines.length) throw new Error('No data yet');
+    return lines.map(l => JSON.parse(l));
+  } catch (e) {
+    document.getElementById('loading').style.display = 'none';
+    const el = document.getElementById('error');
+    el.style.display = 'block';
+    el.textContent = 'Could not load data: ' + e.message + '. Run the scanner first or push data to docs/data/timeline.jsonl';
+    return null;
+  }
+}
+
+function render(entries) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('content').style.display = 'block';
+
+  const last = entries[entries.length - 1];
+  const first = entries[0];
+  const durationH = ((new Date(last.ts) - new Date(first.ts)) / 3.6e6).toFixed(1);
+  document.getElementById('updated').textContent =
+    `${entries.length} scans · ${first.tehranTime} → ${last.tehranTime} (${durationH}h) · Last updated: ${last.tehranTime}`;
+
+  // Summary cards
+  const totalProfitable = entries.reduce((s, e) => s + e.profitableCount, 0);
+  const avgBestNet = entries.reduce((s, e) => s + (e.bestNet ?? 0), 0) / entries.length;
+  const maxBestNet = Math.max(...entries.map(e => e.bestNet ?? -999));
+  const totalProfit = entries.reduce((s, e) => s + e.totalEstProfit, 0);
+
+  document.getElementById('summary-cards').innerHTML = `
+    <div class="card"><h2>Total Scans</h2><div class="stat blue">${entries.length}</div><div class="stat-label">${durationH} hours of data</div></div>
+    <div class="card"><h2>Total Profitable Signals</h2><div class="stat ${totalProfitable > 0 ? 'green' : 'red'}">${totalProfitable}</div><div class="stat-label">across all scans</div></div>
+    <div class="card"><h2>Best Net% Ever</h2><div class="stat ${maxBestNet > 0 ? 'green' : 'red'}">${maxBestNet > 0 ? '+' : ''}${maxBestNet.toFixed(3)}%</div><div class="stat-label">avg best: ${avgBestNet.toFixed(3)}%</div></div>
+    <div class="card"><h2>Total Est. Profit</h2><div class="stat ${totalProfit > 0 ? 'green' : 'red'}">${fmtIRT(totalProfit)} IRT</div><div class="stat-label">if all profitable signals were traded</div></div>
+  `;
+
+  // By hour
+  const byHour = {};
+  entries.forEach(e => {
+    const h = String(tehranHour(e)).padStart(2, '0');
+    if (!byHour[h]) byHour[h] = { scans: 0, bestNets: [], profCounts: [] };
+    byHour[h].scans++;
+    byHour[h].bestNets.push(e.bestNet ?? 0);
+    byHour[h].profCounts.push(e.profitableCount);
+  });
+  const hours = Object.keys(byHour).sort();
+  const maxHourNet = Math.max(...hours.map(h => {
+    const avg = byHour[h].bestNets.reduce((s,v) => s+v, 0) / byHour[h].scans;
+    return Math.abs(avg);
+  }), 0.001);
+
+  const hourTbody = document.querySelector('#hour-table tbody');
+  hourTbody.innerHTML = hours.map(h => {
+    const b = byHour[h];
+    const avgNet = b.bestNets.reduce((s,v) => s+v, 0) / b.scans;
+    const avgProf = b.profCounts.reduce((s,v) => s+v, 0) / b.scans;
+    const isSleep = Number(h) < 6;
+    const barW = Math.round(Math.abs(avgNet) / maxHourNet * 120);
+    const barCls = avgNet > 0 ? 'pos' : avgNet < 0 ? 'neg' : 'neutral';
+    return `<tr>
+      <td>${h}:00${isSleep ? '<span class="sleep-badge">sleep</span>' : ''}</td>
+      <td>${b.scans}</td>
+      <td>${fmtPct(avgNet)}</td>
+      <td>${avgProf.toFixed(1)}</td>
+      <td><div class="bar-container"><div class="bar ${barCls}" style="width:${barW}px"></div></div></td>
+    </tr>`;
+  }).join('');
+
+  // Sleep vs awake
+  const sleepEntries = entries.filter(e => tehranHour(e) < 6);
+  const awakeEntries = entries.filter(e => tehranHour(e) >= 6);
+  const avgSleep = sleepEntries.length ? sleepEntries.reduce((s,e) => s + (e.bestNet ?? 0), 0) / sleepEntries.length : 0;
+  const avgAwake = awakeEntries.length ? awakeEntries.reduce((s,e) => s + (e.bestNet ?? 0), 0) / awakeEntries.length : 0;
+  const profSleep = sleepEntries.reduce((s,e) => s + e.profitableCount, 0);
+  const profAwake = awakeEntries.reduce((s,e) => s + e.profitableCount, 0);
+
+  document.querySelector('#sleep-table tbody').innerHTML = `
+    <tr><td>Sleep (00-06)</td><td>${sleepEntries.length}</td><td>${fmtPct(avgSleep)}</td><td>${profSleep}</td></tr>
+    <tr><td>Awake (06-24)</td><td>${awakeEntries.length}</td><td>${fmtPct(avgAwake)}</td><td>${profAwake}</td></tr>
+  `;
+
+  // Top opps ever
+  const allTopOpps = [];
+  entries.forEach(e => {
+    e.top.forEach(o => allTopOpps.push({ ...o, time: e.tehranTime }));
+  });
+  allTopOpps.sort((a, b) => b.net - a.net);
+  const best30 = allTopOpps.slice(0, 30);
+
+  document.querySelector('#top-table tbody').innerHTML = best30.map((o, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${o.time}</td>
+      <td><span class="tag ${o.type === 'tri' ? 'tag-tri' : 'tag-cross'}">${o.type === 'tri' ? '3-leg' : '4-leg'}</span></td>
+      <td>${o.assets.join(' + ')}</td>
+      <td>${fmtPct(o.net)}</td>
+      <td>${fmtIRT(o.profit)} IRT</td>
+    </tr>
+  `).join('');
+
+  // Top assets
+  const assetCount = {};
+  entries.forEach(e => {
+    e.top.forEach(o => {
+      o.assets.forEach(a => { assetCount[a] = (assetCount[a] || 0) + 1; });
+    });
+  });
+  const topAssets = Object.entries(assetCount).sort((a, b) => b[1] - a[1]).slice(0, 25);
+  const maxAssetCount = topAssets[0]?.[1] ?? 1;
+
+  document.querySelector('#asset-table tbody').innerHTML = topAssets.map(([asset, count]) => {
+    const barW = Math.round(count / maxAssetCount * 200);
+    return `<tr><td>${asset}</td><td>${count}</td><td><div class="bar-container"><div class="bar pos" style="width:${barW}px; background: var(--blue);"></div></div></td></tr>`;
+  }).join('');
+}
+
+load().then(data => { if (data) render(data); });
+</script>
+</body>
+</html>

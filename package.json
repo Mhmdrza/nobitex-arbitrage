@@ -1,0 +1,19 @@
+{
+  "name": "nobitex-arbitrage",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Triangular & cross-pair arbitrage scanner for Nobitex exchange",
+  "scripts": {
+    "scan": "tsx scripts/scanner.ts",
+    "scan:once": "tsx scripts/scanner.ts --once",
+    "scan:fast": "tsx scripts/scanner.ts --interval 30",
+    "scan:night": "tsx scripts/scanner.ts --interval 120 --quiet",
+    "analyze": "tsx scripts/analyze.ts",
+    "analyze:json": "tsx scripts/analyze.ts --json"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "~5.9.0"
+  }
+}

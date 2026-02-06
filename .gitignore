@@ -1,0 +1,6 @@
+node_modules/
+*.log
+
+# Keep docs/data tracked (GitHub Pages reads it)
+# Ignore local-only snapshots (too many small files)
+docs/data/snapshots/
